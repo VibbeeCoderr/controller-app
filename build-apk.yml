@@ -1,21 +1,17 @@
 name: Build APK
-
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -40,26 +36,27 @@ jobs:
             libltdl-dev \
             libtool \
             pkg-config
-
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Accept Android Licenses
         run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "build-tools;34.0.0" \
+            "build-tools;37.0.0"
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
           mv mobile_app.py mobile_app/
           mv buildozer.spec mobile_app/
-
       - name: Install Buildozer & Dependencies
         working-directory: mobile_app
         run: |
@@ -71,7 +68,6 @@ jobs:
           pip install numpy==1.24.3
           pip install kivy==2.3.0
           pip install plyer
-
       - name: Build APK
         working-directory: mobile_app
         timeout-minutes: 20
@@ -83,13 +79,11 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
           buildozer -v android debug
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: controller-app-apk
           path: mobile_app/bin/*.apk
-
       - name: List bin directory (debug)
         if: failure()
         working-directory: mobile_app
