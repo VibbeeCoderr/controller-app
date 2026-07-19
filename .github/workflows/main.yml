@@ -11,6 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create mobile_app folder
+        run: |
+          mkdir mobile_app
+          mv mobile_app.py mobile_app/
+          mv buildozer.spec mobile_app/
+
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
         with:
