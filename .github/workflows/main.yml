@@ -44,14 +44,24 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
       - name: Accept Android Licenses
+        env:
+          ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
+          ANDROID_HOME: ${{ runner.tool_cache }}/android-sdk
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "build-tools;34.0.0" \
             "build-tools;37.0.0"
+      - name: Make Buildozer use the installed Android SDK (symlink)
+        run: |
+          mkdir -p ~/.buildozer/android/platform
+          rm -rf ~/.buildozer/android/platform/android-sdk || true
+          ln -s ${{ runner.tool_cache }}/android-sdk ~/.buildozer/android/platform/android-sdk
+          ls -la ~/.buildozer/android/platform
+          ls -la ~/.buildozer/android/platform/android-sdk/build-tools || true
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
@@ -76,8 +86,6 @@ jobs:
           ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
         run: |
           source venv/bin/activate
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
-          export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
           buildozer -v android debug
       - name: Upload APK
         uses: actions/upload-artifact@v4
