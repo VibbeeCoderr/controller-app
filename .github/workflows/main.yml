@@ -34,7 +34,25 @@ jobs:
             libxrender1 \
             libxext6 \
             openjdk-17-jdk \
-            zip
+            zip \
+            ant
+
+      - name: Set up Android SDK
+        run: |
+          export ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          mkdir -p $ANDROID_HOME
+          
+          # Download Android command line tools
+          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O android-tools.zip
+          unzip -q android-tools.zip -d $ANDROID_HOME
+          rm android-tools.zip
+          
+          # Accept all licenses
+          yes | $ANDROID_HOME/cmdline-tools/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          
+          # Install required packages
+          $ANDROID_HOME/cmdline-tools/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Create mobile_app folder
         run: |
@@ -52,10 +70,18 @@ jobs:
           pip install cython==0.29.33
           pip install numpy==1.24.3
 
+      - name: Set Android Environment
+        working-directory: mobile_app
+        run: |
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+
       - name: Build APK
         working-directory: mobile_app
         run: |
           source venv/bin/activate
+          export ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
           buildozer android debug
 
       - name: Upload APK
