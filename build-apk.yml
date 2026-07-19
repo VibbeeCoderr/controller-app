@@ -47,14 +47,37 @@ jobs:
       - name: Locate sdkmanager
         id: locate_sdkmanager
         run: |
-          echo "Looking under: ${{ runner.tool_cache }}/android-sdk"
-          find "${{ runner.tool_cache }}/android-sdk" -maxdepth 4 -type d -name "cmdline-tools" || true
-          SDKMANAGER_PATH=$(find "${{ runner.tool_cache }}/android-sdk" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          SEARCH_ROOTS="${{ runner.tool_cache }}/android-sdk /usr/local/lib/android/sdk $ANDROID_HOME $ANDROID_SDK_ROOT"
+
+          # Prefer the modern cmdline-tools sdkmanager — the legacy
+          # "tools/bin/sdkmanager" is incompatible with JDK 17+ and throws
+          # NoClassDefFoundError: javax.xml.bind... if picked instead.
+          SDKMANAGER_PATH=""
+          for ROOT in $SEARCH_ROOTS; do
+            FOUND=$(find "$ROOT" -path "*cmdline-tools*" -name sdkmanager -type f 2>/dev/null | head -n 1)
+            if [ -n "$FOUND" ]; then
+              SDKMANAGER_PATH="$FOUND"
+              break
+            fi
+          done
+
           if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "sdkmanager not found under runner.tool_cache — trying ANDROID_HOME/ANDROID_SDK_ROOT instead"
-            SDKMANAGER_PATH=$(find "$ANDROID_HOME" "$ANDROID_SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)
+            echo "No cmdline-tools sdkmanager found — falling back to any sdkmanager (may be the legacy one)."
+            for ROOT in $SEARCH_ROOTS; do
+              FOUND=$(find "$ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)
+              if [ -n "$FOUND" ]; then
+                SDKMANAGER_PATH="$FOUND"
+                break
+              fi
+            done
           fi
-          echo "Found sdkmanager at: $SDKMANAGER_PATH"
+
+          if [ -z "$SDKMANAGER_PATH" ]; then
+            echo "Could not find sdkmanager anywhere under: $SEARCH_ROOTS"
+            exit 1
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER_PATH"
           echo "sdkmanager_path=$SDKMANAGER_PATH" >> "$GITHUB_OUTPUT"
           SDK_ROOT_RESOLVED=$(dirname "$(dirname "$(dirname "$(dirname "$SDKMANAGER_PATH")")")")
           echo "Resolved SDK root: $SDK_ROOT_RESOLVED"
@@ -63,10 +86,6 @@ jobs:
       - name: Accept Android Licenses
         run: |
           SDKMANAGER="${{ steps.locate_sdkmanager.outputs.sdkmanager_path }}"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "Could not find sdkmanager anywhere — failing early with a clear message."
-            exit 1
-          fi
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" \
             "platform-tools" \
