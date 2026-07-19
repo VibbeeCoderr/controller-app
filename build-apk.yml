@@ -50,6 +50,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android Licenses
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
@@ -71,10 +75,13 @@ jobs:
       - name: Build APK
         working-directory: mobile_app
         timeout-minutes: 20
+        env:
+          ANDROID_HOME: ${{ runner.tool_cache }}/android-sdk
+          ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
         run: |
           source venv/bin/activate
-          export ANDROID_HOME=$HOME/android-sdk
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
           buildozer -v android debug
 
       - name: Upload APK
