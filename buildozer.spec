@@ -15,9 +15,13 @@ fullscreen = 1
 
 android.permissions = INTERNET,VIBRATE
 
-# Start with arm64-v8a only for faster builds; add armeabi-v7a later
-# if you need to support older devices.
 android.archs = arm64-v8a
+
+[android]
+android.accept_sdk_license = True
+android.min_api = 24
+android.api = 33
+android.ndk = 25.1.8937393
 
 [buildozer]
 log_level = 2
