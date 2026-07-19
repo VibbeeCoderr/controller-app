@@ -16,21 +16,25 @@ jobs:
         with:
           python-version: '3.9'
 
+      - name: Update package lists
+        run: sudo apt-get update
+
       - name: Install dependencies
         run: |
-          sudo apt-get update
           sudo apt-get install -y \
             python3-pip \
             python3-venv \
             build-essential \
             libsdl2-dev \
-            libsdl2_image-dev \
-            libsdl2_mixer-dev \
-            libsdl2_ttf-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
             libglib2.0-0 \
             libsm6 \
             libxrender1 \
-            libxext6
+            libxext6 \
+            openjdk-17-jdk \
+            zip
 
       - name: Create mobile_app folder
         run: |
