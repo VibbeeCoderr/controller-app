@@ -11,17 +11,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            python3-venv \
+            build-essential \
+            libsdl2-dev \
+            libsdl2_image-dev \
+            libsdl2_mixer-dev \
+            libsdl2_ttf-dev \
+            libglib2.0-0 \
+            libsm6 \
+            libxrender1 \
+            libxext6
+
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
           mv mobile_app.py mobile_app/
           mv buildozer.spec mobile_app/
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        with:
-          workdir: mobile_app
-          buildozer_version: stable
+      - name: Install Buildozer
+        working-directory: mobile_app
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install buildozer
+          pip install cython==0.29.33
+          pip install numpy==1.24.3
+
+      - name: Build APK
+        working-directory: mobile_app
+        run: |
+          source venv/bin/activate
+          buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
