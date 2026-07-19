@@ -43,30 +43,53 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      - name: Accept Android Licenses
-        env:
-          ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
-          ANDROID_HOME: ${{ runner.tool_cache }}/android-sdk
+
+      - name: Locate sdkmanager
+        id: locate_sdkmanager
         run: |
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+          echo "Looking under: ${{ runner.tool_cache }}/android-sdk"
+          find "${{ runner.tool_cache }}/android-sdk" -maxdepth 4 -type d -name "cmdline-tools" || true
+          SDKMANAGER_PATH=$(find "${{ runner.tool_cache }}/android-sdk" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          if [ -z "$SDKMANAGER_PATH" ]; then
+            echo "sdkmanager not found under runner.tool_cache — trying ANDROID_HOME/ANDROID_SDK_ROOT instead"
+            SDKMANAGER_PATH=$(find "$ANDROID_HOME" "$ANDROID_SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          fi
+          echo "Found sdkmanager at: $SDKMANAGER_PATH"
+          echo "sdkmanager_path=$SDKMANAGER_PATH" >> "$GITHUB_OUTPUT"
+          SDK_ROOT_RESOLVED=$(dirname "$(dirname "$(dirname "$(dirname "$SDKMANAGER_PATH")")")")
+          echo "Resolved SDK root: $SDK_ROOT_RESOLVED"
+          echo "sdk_root=$SDK_ROOT_RESOLVED" >> "$GITHUB_OUTPUT"
+
+      - name: Accept Android Licenses
+        run: |
+          SDKMANAGER="${{ steps.locate_sdkmanager.outputs.sdkmanager_path }}"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Could not find sdkmanager anywhere — failing early with a clear message."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "build-tools;34.0.0" \
             "build-tools;37.0.0"
+
       - name: Make Buildozer use the installed Android SDK (symlink)
         run: |
+          SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
           mkdir -p ~/.buildozer/android/platform
           rm -rf ~/.buildozer/android/platform/android-sdk || true
-          ln -s ${{ runner.tool_cache }}/android-sdk ~/.buildozer/android/platform/android-sdk
+          ln -s "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
           ls -la ~/.buildozer/android/platform
           ls -la ~/.buildozer/android/platform/android-sdk/build-tools || true
+
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
           mv mobile_app.py mobile_app/
           mv buildozer.spec mobile_app/
+
       - name: Install Buildozer & Dependencies
         working-directory: mobile_app
         run: |
@@ -78,23 +101,25 @@ jobs:
           pip install numpy==1.24.3
           pip install kivy==2.3.0
           pip install plyer
+
       - name: Build APK
         working-directory: mobile_app
         timeout-minutes: 20
         env:
-          ANDROID_HOME: ${{ runner.tool_cache }}/android-sdk
-          ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
+          ANDROID_HOME: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
+          ANDROID_SDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
         run: |
           source venv/bin/activate
           buildozer -v android debug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: controller-app-apk
           path: mobile_app/bin/*.apk
+
       - name: List bin directory (debug)
         if: failure()
-        working-directory: mobile_app
         run: |
-          ls -la bin/ || echo "bin directory not found"
-          ls -la || echo "Directory listing failed"
+          ls -la mobile_app/bin/ 2>/dev/null || echo "bin directory not found"
+          ls -la mobile_app 2>/dev/null || echo "mobile_app directory not found"
