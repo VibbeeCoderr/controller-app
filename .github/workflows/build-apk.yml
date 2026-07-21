@@ -49,9 +49,6 @@ jobs:
         run: |
           SEARCH_ROOTS="${{ runner.tool_cache }}/android-sdk /usr/local/lib/android/sdk $ANDROID_HOME $ANDROID_SDK_ROOT"
 
-          # Prefer the modern cmdline-tools sdkmanager — the legacy
-          # "tools/bin/sdkmanager" is incompatible with JDK 17+ and throws
-          # NoClassDefFoundError: javax.xml.bind... if picked instead.
           SDKMANAGER_PATH=""
           for ROOT in $SEARCH_ROOTS; do
             FOUND=$(find "$ROOT" -path "*cmdline-tools*" -name sdkmanager -type f 2>/dev/null | head -n 1)
@@ -62,7 +59,6 @@ jobs:
           done
 
           if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "No cmdline-tools sdkmanager found — falling back to any sdkmanager (may be the legacy one)."
             for ROOT in $SEARCH_ROOTS; do
               FOUND=$(find "$ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)
               if [ -n "$FOUND" ]; then
@@ -79,6 +75,8 @@ jobs:
 
           echo "Using sdkmanager: $SDKMANAGER_PATH"
           echo "sdkmanager_path=$SDKMANAGER_PATH" >> "$GITHUB_OUTPUT"
+          CMDLINE_TOOLS_BIN=$(dirname "$SDKMANAGER_PATH")
+          echo "cmdline_tools_bin=$CMDLINE_TOOLS_BIN" >> "$GITHUB_OUTPUT"
           SDK_ROOT_RESOLVED=$(dirname "$(dirname "$(dirname "$(dirname "$SDKMANAGER_PATH")")")")
           echo "Resolved SDK root: $SDK_ROOT_RESOLVED"
           echo "sdk_root=$SDK_ROOT_RESOLVED" >> "$GITHUB_OUTPUT"
@@ -97,17 +95,39 @@ jobs:
       - name: Make Buildozer use the installed Android SDK (symlink)
         run: |
           SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
+          CMDLINE_TOOLS_BIN="${{ steps.locate_sdkmanager.outputs.cmdline_tools_bin }}"
+
           mkdir -p ~/.buildozer/android/platform
           rm -rf ~/.buildozer/android/platform/android-sdk || true
           ln -s "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
+
+          # Buildozer/p4a internally calls the OLD "tools/bin/sdkmanager"
+          # path to install/update platform-tools. Modern SDKs only ship
+          # "cmdline-tools", so that legacy path doesn't exist — recreate
+          # it as a symlink to the real (modern) sdkmanager/avdmanager.
+          mkdir -p "$SDK_ROOT/tools/bin"
+          ln -sf "$CMDLINE_TOOLS_BIN/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
+          if [ -f "$CMDLINE_TOOLS_BIN/avdmanager" ]; then
+            ln -sf "$CMDLINE_TOOLS_BIN/avdmanager" "$SDK_ROOT/tools/bin/avdmanager"
+          fi
+
           ls -la ~/.buildozer/android/platform
-          ls -la ~/.buildozer/android/platform/android-sdk/build-tools || true
+          ls -la "$SDK_ROOT/tools/bin" || true
 
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
           mv mobile_app.py mobile_app/
           mv buildozer.spec mobile_app/
+
+      - name: Tell buildozer to skip its own SDK auto-update
+        working-directory: mobile_app
+        run: |
+          # We already installed everything buildozer needs by hand above —
+          # this stops it from re-triggering the broken legacy sdkmanager
+          # call on its own.
+          grep -q "^android.skip_update" buildozer.spec || echo "android.skip_update = True" >> buildozer.spec
+          cat buildozer.spec
 
       - name: Install Buildozer & Dependencies
         working-directory: mobile_app
