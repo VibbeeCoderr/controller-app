@@ -125,14 +125,46 @@ jobs:
           mv mobile_app.py mobile_app/main.py
           mv buildozer.spec mobile_app/
 
-      - name: Tell buildozer to skip its own SDK auto-update and pin NDK r27c
+      - name: Force NDK r27.2 - Delete r28c cache and set env vars
         working-directory: mobile_app
         run: |
           SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
-          # r28c (which p4a picks by default) fails compiling Python 3.14 —
-          # pin the known-good r27c we installed above instead.
-          grep -q "^android.skip_update" buildozer.spec || echo "android.skip_update = True" >> buildozer.spec
-          grep -q "^android.ndk_path" buildozer.spec || echo "android.ndk_path = $SDK_ROOT/ndk/27.2.12479018" >> buildozer.spec
+          
+          # Delete any cached r28c
+          rm -rf ~/.buildozer/android/platform/android-ndk-r28c 2>/dev/null || true
+          rm -rf .buildozer 2>/dev/null || true
+          
+          # Force correct NDK in buildozer.spec
+          cat > buildozer.spec << 'EOF'
+[app]
+title = PC Controller
+package.name = controllerapp
+package.domain = org.yourname
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 0.1
+requirements = python3,kivy,plyer
+orientation = landscape
+fullscreen = 1
+android.permissions = INTERNET,VIBRATE
+android.archs = arm64-v8a
+
+[android]
+android.accept_sdk_license = True
+android.min_api = 24
+android.api = 33
+android.ndk_path = $(SDK_ROOT)/ndk/27.2.12479018
+android.sdk_path = $(SDK_ROOT)
+android.skip_update = True
+android.useAndroidX = True
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
+          
+          # Replace placeholder with actual SDK_ROOT
+          sed -i "s|\$(SDK_ROOT)|$SDK_ROOT|g" buildozer.spec
           cat buildozer.spec
 
       - name: Install Buildozer & Dependencies
@@ -154,6 +186,10 @@ jobs:
           ANDROID_HOME: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
           ANDROID_SDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
           ANDROID_NDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}/ndk/27.2.12479018
+          ANDROIDNDK: ${{ steps.locate_sdkmanager.outputs.sdk_root }}/ndk/27.2.12479018
+          P4A_RELEASE: 2024.07.01
+          P4A_NDK_VERSION: 27.2.12479018
+          P4A_BOOTSTRAP: sdl2
         run: |
           source venv/bin/activate
           buildozer -v android debug
