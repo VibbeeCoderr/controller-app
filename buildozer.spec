@@ -1,166 +1,22 @@
-name: Build APK
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            python3-pip \
-            python3-venv \
-            build-essential \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev \
-            libglib2.0-0 \
-            libsm6 \
-            libxrender1 \
-            libxext6 \
-            openjdk-17-jdk \
-            zip \
-            ant \
-            wget \
-            unzip \
-            autoconf \
-            libltdl-dev \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses-dev \
-            libffi-dev \
-            libssl-dev \
-            libsqlite3-dev \
-            cmake
-      - name: Set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+[app]
+title = PC Controller
+package.name = controllerapp
+package.domain = org.yourname
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 0.1
+requirements = python3,kivy,plyer
+orientation = landscape
+fullscreen = 1
+android.permissions = INTERNET,VIBRATE
+android.archs = arm64-v8a
 
-      - name: Locate sdkmanager
-        id: locate_sdkmanager
-        run: |
-          SEARCH_ROOTS="${{ runner.tool_cache }}/android-sdk /usr/local/lib/android/sdk $ANDROID_HOME $ANDROID_SDK_ROOT"
+[android]
+android.accept_sdk_license = True
+android.min_api = 24
+android.api = 33
+android.ndk = 25.1.8937393
 
-          SDKMANAGER_PATH=""
-          for ROOT in $SEARCH_ROOTS; do
-            FOUND=$(find "$ROOT" -path "*cmdline-tools*" -name sdkmanager -type f 2>/dev/null | head -n 1)
-            if [ -n "$FOUND" ]; then
-              SDKMANAGER_PATH="$FOUND"
-              break
-            fi
-          done
-
-          if [ -z "$SDKMANAGER_PATH" ]; then
-            for ROOT in $SEARCH_ROOTS; do
-              FOUND=$(find "$ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)
-              if [ -n "$FOUND" ]; then
-                SDKMANAGER_PATH="$FOUND"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "Could not find sdkmanager anywhere under: $SEARCH_ROOTS"
-            exit 1
-          fi
-
-          echo "Using sdkmanager: $SDKMANAGER_PATH"
-          echo "sdkmanager_path=$SDKMANAGER_PATH" >> "$GITHUB_OUTPUT"
-          CMDLINE_TOOLS_BIN=$(dirname "$SDKMANAGER_PATH")
-          echo "cmdline_tools_bin=$CMDLINE_TOOLS_BIN" >> "$GITHUB_OUTPUT"
-          SDK_ROOT_RESOLVED=$(dirname "$(dirname "$(dirname "$(dirname "$SDKMANAGER_PATH")")")")
-          echo "Resolved SDK root: $SDK_ROOT_RESOLVED"
-          echo "sdk_root=$SDK_ROOT_RESOLVED" >> "$GITHUB_OUTPUT"
-
-      - name: Accept Android Licenses
-        run: |
-          SDKMANAGER="${{ steps.locate_sdkmanager.outputs.sdkmanager_path }}"
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2" \
-            "build-tools;34.0.0" \
-            "build-tools;37.0.0"
-
-      - name: Make Buildozer use the installed Android SDK (symlink)
-        run: |
-          SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
-          CMDLINE_TOOLS_BIN="${{ steps.locate_sdkmanager.outputs.cmdline_tools_bin }}"
-
-          mkdir -p ~/.buildozer/android/platform
-          rm -rf ~/.buildozer/android/platform/android-sdk || true
-          ln -s "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
-
-          mkdir -p "$SDK_ROOT/tools/bin"
-          ln -sf "$CMDLINE_TOOLS_BIN/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
-          if [ -f "$CMDLINE_TOOLS_BIN/avdmanager" ]; then
-            ln -sf "$CMDLINE_TOOLS_BIN/avdmanager" "$SDK_ROOT/tools/bin/avdmanager"
-          fi
-
-          ls -la ~/.buildozer/android/platform
-          ls -la "$SDK_ROOT/tools/bin" || true
-
-      - name: Create mobile_app folder
-        run: |
-          mkdir mobile_app
-          # python-for-android looks for "main.py" specifically as the
-          # app's entry point — rename on the way in so this doesn't
-          # surface as a late build failure.
-          mv mobile_app.py mobile_app/main.py
-          mv buildozer.spec mobile_app/
-
-      - name: Tell buildozer to skip its own SDK auto-update
-        working-directory: mobile_app
-        run: |
-          grep -q "^android.skip_update" buildozer.spec || echo "android.skip_update = True" >> buildozer.spec
-          cat buildozer.spec
-
-      - name: Install Buildozer & Dependencies
-        working-directory: mobile_app
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install buildozer
-          pip install cython==0.29.33
-          pip install numpy==1.24.3
-          pip install kivy==2.3.0
-          pip install plyer
-
-      - name: Build APK
-        working-directory: mobile_app
-        timeout-minutes: 20
-        env:
-          ANDROID_HOME: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
-          ANDROID_SDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
-        run: |
-          source venv/bin/activate
-          buildozer -v android debug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: controller-app-apk
-          path: mobile_app/bin/*.apk
-
-      - name: List bin directory (debug)
-        if: failure()
-        run: |
-          ls -la mobile_app/bin/ 2>/dev/null || echo "bin directory not found"
-          ls -la mobile_app 2>/dev/null || echo "mobile_app directory not found"
+[buildozer]
+log_level = 2
+warn_on_root = 1
