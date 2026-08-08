@@ -96,7 +96,8 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "build-tools;34.0.0" \
-            "build-tools;37.0.0"
+            "build-tools;37.0.0" \
+            "ndk;27.2.12479018"
 
       - name: Make Buildozer use the installed Android SDK (symlink)
         run: |
@@ -115,17 +116,23 @@ jobs:
 
           ls -la ~/.buildozer/android/platform
           ls -la "$SDK_ROOT/tools/bin" || true
+          echo "Installed NDK versions:"
+          ls -la "$SDK_ROOT/ndk" || true
 
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
-          mv mobile_app.py mobile_app/
+          mv mobile_app.py mobile_app/main.py
           mv buildozer.spec mobile_app/
 
-      - name: Tell buildozer to skip its own SDK auto-update
+      - name: Tell buildozer to skip its own SDK auto-update and pin NDK r27c
         working-directory: mobile_app
         run: |
+          SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
+          # r28c (which p4a picks by default) fails compiling Python 3.14 —
+          # pin the known-good r27c we installed above instead.
           grep -q "^android.skip_update" buildozer.spec || echo "android.skip_update = True" >> buildozer.spec
+          grep -q "^android.ndk_path" buildozer.spec || echo "android.ndk_path = $SDK_ROOT/ndk/27.2.12479018" >> buildozer.spec
           cat buildozer.spec
 
       - name: Install Buildozer & Dependencies
