@@ -24,32 +24,37 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Locate SDK and accept licenses
-        id: locate_sdk
+      - name: Find sdkmanager and install NDK
         run: |
-          ANDROID_SDK_ROOT="/usr/local/lib/android/sdk"
-          export ANDROID_SDK_ROOT
+          # Find sdkmanager
+          SDKMANAGER=$(find /usr/local/lib/android/sdk -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Error: sdkmanager not found"
+            find /usr/local/lib/android/sdk -type f -name "sdkmanager*" 2>/dev/null || echo "No sdkmanager found anywhere"
+            exit 1
+          fi
           
-          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" "build-tools;34.0.0" "build-tools;37.0.0" "ndk;27.2.12479018"
+          echo "Found sdkmanager at: $SDKMANAGER"
           
-          echo "sdk_root=$ANDROID_SDK_ROOT" >> "$GITHUB_OUTPUT"
-          ls -la $ANDROID_SDK_ROOT/ndk
+          # Accept licenses and install NDK
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-33" "build-tools;33.0.2" "build-tools;34.0.0" "build-tools;37.0.0" "ndk;27.2.12479018"
+          
+          # Verify NDK installation
+          ls -la /usr/local/lib/android/sdk/ndk/
 
-      - name: Setup buildozer environment
+      - name: Setup buildozer and create mobile_app
         run: |
-          ANDROID_SDK_ROOT="/usr/local/lib/android/sdk"
+          # Clean cache
+          rm -rf ~/.buildozer 2>/dev/null || true
           mkdir -p ~/.buildozer/android/platform
-          rm -rf ~/.buildozer/android/platform/android-sdk 2>/dev/null || true
-          rm -rf ~/.buildozer/android/platform/android-ndk-r28c 2>/dev/null || true
-          ln -s "$ANDROID_SDK_ROOT" ~/.buildozer/android/platform/android-sdk
-
-      - name: Prepare mobile app
-        env:
-          SDK_PATH: /usr/local/lib/android/sdk
-        run: |
+          ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
+          
+          # Create mobile_app
           mkdir -p mobile_app
           mv mobile_app.py mobile_app/main.py
+          
+          # Create buildozer.spec
           cat > mobile_app/buildozer.spec << 'EOF'
 [app]
 title = PC Controller
@@ -79,15 +84,7 @@ warn_on_root = 1
 EOF
           cat mobile_app/buildozer.spec
 
-      - name: Install Buildozer
-        working-directory: mobile_app
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install buildozer cython==3.0.10 numpy==1.24.3 kivy==2.3.0 plyer
-
-      - name: Build APK
+      - name: Install Buildozer & build
         working-directory: mobile_app
         timeout-minutes: 45
         env:
@@ -98,7 +95,10 @@ EOF
           P4A_NDK_VERSION: 27.2.12479018
           P4A_BOOTSTRAP: sdl2
         run: |
+          python3 -m venv venv
           source venv/bin/activate
+          pip install --upgrade pip
+          pip install buildozer cython==3.0.10 numpy==1.24.3 kivy==2.3.0 plyer
           buildozer -v android debug
 
       - name: Upload APK
@@ -107,6 +107,10 @@ EOF
           name: controller-app-apk
           path: mobile_app/bin/*.apk
 
-      - name: Debug (if failed)
+      - name: Debug info
         if: failure()
-        run: ls -la mobile_app/bin/ 2>/dev/null || echo "Build failed"
+        run: |
+          echo "=== Buildozer logs ==="
+          tail -100 ~/.buildozer/logs/buildozer.log || echo "No logs"
+          echo "=== Check bin directory ==="
+          ls -la mobile_app/bin/ 2>/dev/null || echo "No bin directory"
