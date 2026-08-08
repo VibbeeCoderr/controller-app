@@ -119,7 +119,10 @@ jobs:
       - name: Create mobile_app folder
         run: |
           mkdir mobile_app
-          mv mobile_app.py mobile_app/
+          # python-for-android looks for "main.py" specifically as the
+          # app's entry point — rename on the way in so this doesn't
+          # surface as a late build failure.
+          mv mobile_app.py mobile_app/main.py
           mv buildozer.spec mobile_app/
 
       - name: Tell buildozer to skip its own SDK auto-update
