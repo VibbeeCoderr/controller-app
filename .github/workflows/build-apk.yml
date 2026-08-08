@@ -15,33 +15,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            python3-pip \
-            python3-venv \
-            build-essential \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev \
-            libglib2.0-0 \
-            libsm6 \
-            libxrender1 \
-            libxext6 \
-            openjdk-17-jdk \
-            zip \
-            ant \
-            wget \
-            unzip \
-            autoconf \
-            libltdl-dev \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses-dev \
-            libffi-dev \
-            libssl-dev \
-            libsqlite3-dev \
-            cmake
+          sudo apt-get install -y python3-pip python3-venv build-essential libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libglib2.0-0 libsm6 libxrender1 libxext6 openjdk-17-jdk zip ant wget unzip autoconf libltdl-dev libtool pkg-config zlib1g-dev libncurses-dev libffi-dev libssl-dev libsqlite3-dev cmake
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
@@ -50,92 +24,33 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Locate sdkmanager
-        id: locate_sdkmanager
+      - name: Locate SDK and accept licenses
+        id: locate_sdk
         run: |
-          SEARCH_ROOTS="${{ runner.tool_cache }}/android-sdk /usr/local/lib/android/sdk $ANDROID_HOME $ANDROID_SDK_ROOT"
+          ANDROID_SDK_ROOT="/usr/local/lib/android/sdk"
+          export ANDROID_SDK_ROOT
+          
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" "build-tools;34.0.0" "build-tools;37.0.0" "ndk;27.2.12479018"
+          
+          echo "sdk_root=$ANDROID_SDK_ROOT" >> "$GITHUB_OUTPUT"
+          ls -la $ANDROID_SDK_ROOT/ndk
 
-          SDKMANAGER_PATH=""
-          for ROOT in $SEARCH_ROOTS; do
-            FOUND=$(find "$ROOT" -path "*cmdline-tools*" -name sdkmanager -type f 2>/dev/null | head -n 1)
-            if [ -n "$FOUND" ]; then
-              SDKMANAGER_PATH="$FOUND"
-              break
-            fi
-          done
-
-          if [ -z "$SDKMANAGER_PATH" ]; then
-            for ROOT in $SEARCH_ROOTS; do
-              FOUND=$(find "$ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)
-              if [ -n "$FOUND" ]; then
-                SDKMANAGER_PATH="$FOUND"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "Could not find sdkmanager anywhere under: $SEARCH_ROOTS"
-            exit 1
-          fi
-
-          echo "Using sdkmanager: $SDKMANAGER_PATH"
-          echo "sdkmanager_path=$SDKMANAGER_PATH" >> "$GITHUB_OUTPUT"
-          CMDLINE_TOOLS_BIN=$(dirname "$SDKMANAGER_PATH")
-          echo "cmdline_tools_bin=$CMDLINE_TOOLS_BIN" >> "$GITHUB_OUTPUT"
-          SDK_ROOT_RESOLVED=$(dirname "$(dirname "$(dirname "$(dirname "$SDKMANAGER_PATH")")")")
-          echo "Resolved SDK root: $SDK_ROOT_RESOLVED"
-          echo "sdk_root=$SDK_ROOT_RESOLVED" >> "$GITHUB_OUTPUT"
-
-      - name: Accept Android Licenses
+      - name: Setup buildozer environment
         run: |
-          SDKMANAGER="${{ steps.locate_sdkmanager.outputs.sdkmanager_path }}"
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2" \
-            "build-tools;34.0.0" \
-            "build-tools;37.0.0" \
-            "ndk;27.2.12479018"
-
-      - name: Make Buildozer use the installed Android SDK (symlink)
-        run: |
-          SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
-          CMDLINE_TOOLS_BIN="${{ steps.locate_sdkmanager.outputs.cmdline_tools_bin }}"
-
+          ANDROID_SDK_ROOT="/usr/local/lib/android/sdk"
           mkdir -p ~/.buildozer/android/platform
-          rm -rf ~/.buildozer/android/platform/android-sdk || true
-          ln -s "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
-
-          mkdir -p "$SDK_ROOT/tools/bin"
-          ln -sf "$CMDLINE_TOOLS_BIN/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
-          if [ -f "$CMDLINE_TOOLS_BIN/avdmanager" ]; then
-            ln -sf "$CMDLINE_TOOLS_BIN/avdmanager" "$SDK_ROOT/tools/bin/avdmanager"
-          fi
-
-          ls -la ~/.buildozer/android/platform
-          ls -la "$SDK_ROOT/tools/bin" || true
-          echo "Installed NDK versions:"
-          ls -la "$SDK_ROOT/ndk" || true
-
-      - name: Create mobile_app folder
-        run: |
-          mkdir mobile_app
-          mv mobile_app.py mobile_app/main.py
-          mv buildozer.spec mobile_app/
-
-      - name: Force NDK r27.2 - Delete r28c cache and set env vars
-        working-directory: mobile_app
-        run: |
-          SDK_ROOT="${{ steps.locate_sdkmanager.outputs.sdk_root }}"
-          
-          # Delete any cached r28c
+          rm -rf ~/.buildozer/android/platform/android-sdk 2>/dev/null || true
           rm -rf ~/.buildozer/android/platform/android-ndk-r28c 2>/dev/null || true
-          rm -rf .buildozer 2>/dev/null || true
-          
-          # Force correct NDK in buildozer.spec
-          cat > buildozer.spec << 'EOF'
+          ln -s "$ANDROID_SDK_ROOT" ~/.buildozer/android/platform/android-sdk
+
+      - name: Prepare mobile app
+        env:
+          SDK_PATH: /usr/local/lib/android/sdk
+        run: |
+          mkdir -p mobile_app
+          mv mobile_app.py mobile_app/main.py
+          cat > mobile_app/buildozer.spec << 'EOF'
 [app]
 title = PC Controller
 package.name = controllerapp
@@ -153,8 +68,8 @@ android.archs = arm64-v8a
 android.accept_sdk_license = True
 android.min_api = 24
 android.api = 33
-android.ndk_path = $(SDK_ROOT)/ndk/27.2.12479018
-android.sdk_path = $(SDK_ROOT)
+android.ndk_path = /usr/local/lib/android/sdk/ndk/27.2.12479018
+android.sdk_path = /usr/local/lib/android/sdk
 android.skip_update = True
 android.useAndroidX = True
 
@@ -162,32 +77,24 @@ android.useAndroidX = True
 log_level = 2
 warn_on_root = 1
 EOF
-          
-          # Replace placeholder with actual SDK_ROOT
-          sed -i "s|\$(SDK_ROOT)|$SDK_ROOT|g" buildozer.spec
-          cat buildozer.spec
+          cat mobile_app/buildozer.spec
 
-      - name: Install Buildozer & Dependencies
+      - name: Install Buildozer
         working-directory: mobile_app
         run: |
           python3 -m venv venv
           source venv/bin/activate
           pip install --upgrade pip
-          pip install buildozer
-          pip install cython==3.0.10
-          pip install numpy==1.24.3
-          pip install kivy==2.3.0
-          pip install plyer
+          pip install buildozer cython==3.0.10 numpy==1.24.3 kivy==2.3.0 plyer
 
       - name: Build APK
         working-directory: mobile_app
         timeout-minutes: 45
         env:
-          ANDROID_HOME: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
-          ANDROID_SDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
-          ANDROID_NDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}/ndk/27.2.12479018
-          ANDROIDNDK: ${{ steps.locate_sdkmanager.outputs.sdk_root }}/ndk/27.2.12479018
-          P4A_RELEASE: 2024.07.01
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_NDK_ROOT: /usr/local/lib/android/sdk/ndk/27.2.12479018
+          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
           P4A_NDK_VERSION: 27.2.12479018
           P4A_BOOTSTRAP: sdl2
         run: |
@@ -200,8 +107,6 @@ EOF
           name: controller-app-apk
           path: mobile_app/bin/*.apk
 
-      - name: List bin directory (debug)
+      - name: Debug (if failed)
         if: failure()
-        run: |
-          ls -la mobile_app/bin/ 2>/dev/null || echo "bin directory not found"
-          ls -la mobile_app 2>/dev/null || echo "mobile_app directory not found"
+        run: ls -la mobile_app/bin/ 2>/dev/null || echo "Build failed"
