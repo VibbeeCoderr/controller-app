@@ -142,17 +142,18 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip
           pip install buildozer
-          pip install cython==0.29.33
+          pip install cython==3.0.10
           pip install numpy==1.24.3
           pip install kivy==2.3.0
           pip install plyer
 
       - name: Build APK
         working-directory: mobile_app
-        timeout-minutes: 20
+        timeout-minutes: 45
         env:
           ANDROID_HOME: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
           ANDROID_SDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}
+          ANDROID_NDK_ROOT: ${{ steps.locate_sdkmanager.outputs.sdk_root }}/ndk/27.2.12479018
         run: |
           source venv/bin/activate
           buildozer -v android debug
