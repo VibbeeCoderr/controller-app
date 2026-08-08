@@ -35,7 +35,13 @@ jobs:
             autoconf \
             libltdl-dev \
             libtool \
-            pkg-config
+            pkg-config \
+            zlib1g-dev \
+            libncurses-dev \
+            libffi-dev \
+            libssl-dev \
+            libsqlite3-dev \
+            cmake
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
@@ -101,10 +107,6 @@ jobs:
           rm -rf ~/.buildozer/android/platform/android-sdk || true
           ln -s "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
 
-          # Buildozer/p4a internally calls the OLD "tools/bin/sdkmanager"
-          # path to install/update platform-tools. Modern SDKs only ship
-          # "cmdline-tools", so that legacy path doesn't exist — recreate
-          # it as a symlink to the real (modern) sdkmanager/avdmanager.
           mkdir -p "$SDK_ROOT/tools/bin"
           ln -sf "$CMDLINE_TOOLS_BIN/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
           if [ -f "$CMDLINE_TOOLS_BIN/avdmanager" ]; then
@@ -123,9 +125,6 @@ jobs:
       - name: Tell buildozer to skip its own SDK auto-update
         working-directory: mobile_app
         run: |
-          # We already installed everything buildozer needs by hand above —
-          # this stops it from re-triggering the broken legacy sdkmanager
-          # call on its own.
           grep -q "^android.skip_update" buildozer.spec || echo "android.skip_update = True" >> buildozer.spec
           cat buildozer.spec
 
