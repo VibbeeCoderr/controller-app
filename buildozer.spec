@@ -15,7 +15,8 @@ android.archs = arm64-v8a
 android.accept_sdk_license = True
 android.min_api = 24
 android.api = 33
-android.ndk = 27.2.12479018
+android.ndk_path = /home/runner/.buildozer/android/platform/android-sdk/ndk/27.2.12479018
+android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk
 android.skip_update = True
 android.useAndroidX = True
 
