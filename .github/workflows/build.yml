@@ -1,0 +1,116 @@
+name: Build APK
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip python3-venv build-essential libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libglib2.0-0 libsm6 libxrender1 libxext6 openjdk-17-jdk zip ant wget unzip autoconf libltdl-dev libtool pkg-config zlib1g-dev libncurses-dev libffi-dev libssl-dev libsqlite3-dev cmake
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Find sdkmanager and install NDK
+        run: |
+          # Find sdkmanager
+          SDKMANAGER=$(find /usr/local/lib/android/sdk -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Error: sdkmanager not found"
+            find /usr/local/lib/android/sdk -type f -name "sdkmanager*" 2>/dev/null || echo "No sdkmanager found anywhere"
+            exit 1
+          fi
+          
+          echo "Found sdkmanager at: $SDKMANAGER"
+          
+          # Accept licenses and install NDK
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-33" "build-tools;33.0.2" "build-tools;34.0.0" "build-tools;37.0.0" "ndk;27.2.12479018"
+          
+          # Verify NDK installation
+          ls -la /usr/local/lib/android/sdk/ndk/
+
+      - name: Setup buildozer and create mobile_app
+        run: |
+          # Clean cache
+          rm -rf ~/.buildozer 2>/dev/null || true
+          mkdir -p ~/.buildozer/android/platform
+          ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
+          
+          # Create mobile_app
+          mkdir -p mobile_app
+          mv mobile_app.py mobile_app/main.py
+          
+          # Create buildozer.spec
+          cat > mobile_app/buildozer.spec << 'EOF'
+[app]
+title = PC Controller
+package.name = controllerapp
+package.domain = org.yourname
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 0.1
+requirements = python3,kivy,plyer
+orientation = landscape
+fullscreen = 1
+android.permissions = INTERNET,VIBRATE
+android.archs = arm64-v8a
+
+[android]
+android.accept_sdk_license = True
+android.min_api = 24
+android.api = 33
+android.ndk_path = /usr/local/lib/android/sdk/ndk/27.2.12479018
+android.sdk_path = /usr/local/lib/android/sdk
+android.skip_update = True
+android.useAndroidX = True
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
+          cat mobile_app/buildozer.spec
+
+      - name: Install Buildozer & build
+        working-directory: mobile_app
+        timeout-minutes: 45
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_NDK_ROOT: /usr/local/lib/android/sdk/ndk/27.2.12479018
+          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+          P4A_NDK_VERSION: 27.2.12479018
+          P4A_BOOTSTRAP: sdl2
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install buildozer cython==3.0.10 numpy==1.24.3 kivy==2.3.0 plyer
+          buildozer -v android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: controller-app-apk
+          path: mobile_app/bin/*.apk
+
+      - name: Debug info
+        if: failure()
+        run: |
+          echo "=== Buildozer logs ==="
+          tail -100 ~/.buildozer/logs/buildozer.log || echo "No logs"
+          echo "=== Check bin directory ==="
+          ls -la mobile_app/bin/ 2>/dev/null || echo "No bin directory"
